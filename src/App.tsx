@@ -17,6 +17,7 @@ import { Stage4DocumentPanel } from './components/Stage4DocumentPanel';
 import { type AgentStepId, StepperHeader, type StepStatus } from './components/StepperHeader';
 import type {
   AcademicSource,
+  AdditionalResearchQA,
   Agent3ComparisonResult,
   ArticleExtraction,
   ArticleSearchResult,
@@ -341,6 +342,39 @@ export function App() {
             onUpdateTableCell={handleUpdateTableCell}
             onUpdateAnswer={(ans) =>
               setComparison((prev) => (prev ? { ...prev, respuestaArgumentada: ans } : prev))
+            }
+            onUpdateAdditionalQA={(idx, patch: Partial<AdditionalResearchQA>) =>
+              setComparison((prev) => {
+                if (!prev) return prev;
+                const nextQAs = (prev.preguntasAdicionales ?? []).map((item, i) =>
+                  i === idx ? { ...item, ...patch } : item
+                );
+                return { ...prev, preguntasAdicionales: nextQAs };
+              })
+            }
+            onAddAdditionalQA={() =>
+              setComparison((prev) => {
+                if (!prev) return prev;
+                const nuevo: AdditionalResearchQA = {
+                  pregunta: '¿Qué otro aspecto específico abordan los artículos analizados?',
+                  respuesta: 'Escriba aquí la respuesta basada en la evidencia de los documentos.',
+                  articulosRespaldo: extractions.map((e) => e.citaEnTextoApa7),
+                  suficiencia: 'parcial',
+                };
+                return {
+                  ...prev,
+                  preguntasAdicionales: [...(prev.preguntasAdicionales ?? []), nuevo],
+                };
+              })
+            }
+            onRemoveAdditionalQA={(idx) =>
+              setComparison((prev) => {
+                if (!prev) return prev;
+                return {
+                  ...prev,
+                  preguntasAdicionales: (prev.preguntasAdicionales ?? []).filter((_, i) => i !== idx),
+                };
+              })
             }
             onProceedToAgent4={() => setActiveStep('document')}
             error={compareError}

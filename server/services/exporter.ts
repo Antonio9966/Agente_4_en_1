@@ -101,7 +101,23 @@ export function exportToMarkdown(doc: FinalDocument): string {
   lines.push(
     '### Respuesta argumentada a la pregunta de investigación',
     doc.comparacionAgente3.respuestaArgumentada,
-    '',
+    ''
+  );
+
+  if (doc.comparacionAgente3.preguntasAdicionales?.length > 0) {
+    lines.push('### Preguntas de investigación adicionales generadas y respondidas');
+    doc.comparacionAgente3.preguntasAdicionales.forEach((qa, idx) => {
+      lines.push(
+        `#### ${idx + 1}. ${qa.pregunta}`,
+        `*Suficiencia:* ${qa.suficiencia} | *Respaldo:* ${qa.articulosRespaldo.join(', ')}`,
+        '',
+        qa.respuesta,
+        ''
+      );
+    });
+  }
+
+  lines.push(
     '## 8. Conclusiones generales',
     '### Hallazgos de los artículos',
     doc.conclusionesGenerales.hallazgosArticulos,
@@ -308,6 +324,30 @@ export async function exportToDocx(doc: FinalDocument): Promise<Buffer> {
   addHeading2('Respuesta argumentada a la pregunta de investigación');
   addBodyLines(doc.comparacionAgente3.respuestaArgumentada);
 
+  if (doc.comparacionAgente3.preguntasAdicionales?.length > 0) {
+    addHeading2('Preguntas de investigación adicionales generadas y respondidas');
+    doc.comparacionAgente3.preguntasAdicionales.forEach((qa, idx) => {
+      children.push(
+        new Paragraph({
+          spacing: { before: 160, after: 60 },
+          children: [new TextRun({ text: `${idx + 1}. ${qa.pregunta}`, bold: true, size: 22 })],
+        }),
+        new Paragraph({
+          spacing: { after: 60 },
+          children: [
+            new TextRun({
+              text: `Suficiencia: ${qa.suficiencia} | Respaldo: ${qa.articulosRespaldo.join(', ')}`,
+              italics: true,
+              size: 19,
+              color: '475569',
+            }),
+          ],
+        })
+      );
+      addBodyLines(qa.respuesta);
+    });
+  }
+
   // 8. Conclusiones generales
   addHeading1('8. Conclusiones generales');
   addHeading2('Hallazgos de los artículos');
@@ -456,6 +496,18 @@ export async function exportToPdf(doc: FinalDocument): Promise<Buffer> {
     }
     addSubSection('Respuesta argumentada a la pregunta de investigación');
     pdf.text(t(doc.comparacionAgente3.respuestaArgumentada));
+
+    if (doc.comparacionAgente3.preguntasAdicionales?.length > 0) {
+      addSubSection('Preguntas de investigación adicionales generadas y respondidas');
+      doc.comparacionAgente3.preguntasAdicionales.forEach((qa, idx) => {
+        pdf.moveDown(0.3);
+        pdf.font(boldFont).fontSize(10).fillColor('#0F172A').text(t(`${idx + 1}. ${qa.pregunta}`));
+        pdf.font(regularFont).fontSize(9).fillColor('#475569').text(
+          t(`Suficiencia: ${qa.suficiencia} | Respaldo: ${qa.articulosRespaldo.join(', ')}`)
+        );
+        pdf.font(regularFont).fontSize(10).fillColor('#1E293B').text(t(qa.respuesta));
+      });
+    }
 
     addSection('8. Conclusiones generales');
     addSubSection('Hallazgos de los artículos');

@@ -132,6 +132,13 @@ export interface ClaimSupport {
   tipo: 'evidencia_directa' | 'sintesis_comparativa' | 'inferencia_cautelosa';
 }
 
+export interface AdditionalResearchQA {
+  pregunta: string;
+  respuesta: string;
+  articulosRespaldo: string[];
+  suficiencia: 'suficiente' | 'parcial' | 'insuficiente';
+}
+
 export interface Agent3ComparisonResult {
   preguntaInvestigacion: string;
   articulosIds: string[];
@@ -144,6 +151,7 @@ export interface Agent3ComparisonResult {
   vaciosYLimitaciones: string[];
   evidenciaParaPregunta: string[];
   respuestaArgumentada: string;
+  preguntasAdicionales: AdditionalResearchQA[];
   afirmacionesRespaldadas: ClaimSupport[];
   suficienciaEvidencia: 'suficiente' | 'parcial' | 'insuficiente';
   notaSuficiencia: string;

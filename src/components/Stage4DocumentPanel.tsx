@@ -294,6 +294,25 @@ export function Stage4DocumentPanel({
               <p className="mt-3 whitespace-pre-line text-sm leading-relaxed text-slate-800">
                 {document.comparacionAgente3.respuestaArgumentada}
               </p>
+
+              {document.comparacionAgente3.preguntasAdicionales?.length > 0 && (
+                <div className="mt-4 space-y-2.5">
+                  <h4 className="text-sm font-semibold text-slate-900">
+                    Preguntas de investigación adicionales generadas y respondidas
+                  </h4>
+                  {document.comparacionAgente3.preguntasAdicionales.map((qa, idx) => (
+                    <div key={idx} className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs">
+                      <div className="font-semibold text-slate-900">
+                        {idx + 1}. {qa.pregunta}
+                      </div>
+                      <div className="mt-0.5 text-[11px] text-slate-500">
+                        Suficiencia: {qa.suficiencia} · Respaldo: {qa.articulosRespaldo.join(', ')}
+                      </div>
+                      <p className="mt-1.5 whitespace-pre-line leading-relaxed text-slate-700">{qa.respuesta}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
 
             <div className="space-y-3">

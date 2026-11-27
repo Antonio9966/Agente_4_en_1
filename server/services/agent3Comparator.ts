@@ -1,4 +1,5 @@
 import type {
+  AdditionalResearchQA,
   Agent3ComparisonResult,
   ArticleExtraction,
   ClaimSupport,
@@ -240,6 +241,113 @@ function buildLocalComparison(
     'Nota metodológica: Las convergencias entre estudios indican coincidencias observadas en los textos analizados y no deben interpretarse automáticamente como relaciones causales ni generalizarse fuera de las muestras o contextos descritos por los autores.',
   ].join('\n');
 
+function buildLocalAdditionalQuestions(
+  extractions: ArticleExtraction[],
+  coincidencias: string[],
+  complementariedadesYContradicciones: string[]
+): AdditionalResearchQA[] {
+  const allCites = extractions.map((e) => e.citaEnTextoApa7);
+
+  // 1. Metodologías y muestras
+  const methodEntries = extractions.filter(
+    (e) =>
+      e.campos.metodoDiseno.valor !== 'No especificado en el artículo' ||
+      e.campos.poblacionMuestra.valor !== 'No especificado en el artículo'
+  );
+  const q1: AdditionalResearchQA = {
+    pregunta:
+      '¿Qué diseños metodológicos, poblaciones o conjuntos de datos emplean los estudios analizados?',
+    respuesta:
+      methodEntries.length > 0
+        ? methodEntries
+            .map(
+              (e) =>
+                `${e.citaEnTextoApa7}: Método "${summarizeField(e.campos.metodoDiseno.valor, 140)}"; muestra/datos "${summarizeField(e.campos.poblacionMuestra.valor, 120)}".`
+            )
+            .join(' ')
+        : 'Los textos disponibles no especifican diseños metodológicos ni características de la muestra.',
+    articulosRespaldo: methodEntries.length > 0 ? methodEntries.map((e) => e.citaEnTextoApa7) : allCites,
+    suficiencia:
+      methodEntries.length === extractions.length
+        ? 'suficiente'
+        : methodEntries.length > 0
+          ? 'parcial'
+          : 'insuficiente',
+  };
+
+  // 2. Modelos, herramientas y resultados
+  const toolOrResultEntries = extractions.filter(
+    (e) =>
+      e.campos.modelosHerramientas.valor !== 'No especificado en el artículo' ||
+      e.campos.resultadosPrincipales.valor !== 'No especificado en el artículo'
+  );
+  const q2: AdditionalResearchQA = {
+    pregunta:
+      '¿Qué modelos, algoritmos, técnicas o herramientas utilizan los documentos y qué resultados principales reportan?',
+    respuesta:
+      toolOrResultEntries.length > 0
+        ? toolOrResultEntries
+            .map(
+              (e) =>
+                `${e.citaEnTextoApa7}: Herramientas/modelos "${summarizeField(e.campos.modelosHerramientas.valor, 120)}"; resultados "${summarizeField(e.campos.resultadosPrincipales.valor, 140)}".`
+            )
+            .join(' ')
+        : 'No se especifican herramientas ni resultados cuantitativos o cualitativos en los fragmentos analizados.',
+    articulosRespaldo:
+      toolOrResultEntries.length > 0 ? toolOrResultEntries.map((e) => e.citaEnTextoApa7) : allCites,
+    suficiencia:
+      toolOrResultEntries.length === extractions.length
+        ? 'suficiente'
+        : toolOrResultEntries.length > 0
+          ? 'parcial'
+          : 'insuficiente',
+  };
+
+  // 3. Convergencias y divergencias
+  const q3: AdditionalResearchQA = {
+    pregunta:
+      '¿En qué hallazgos convergen o se complementan los estudios revisados, y dónde se observan vacíos o diferencias?',
+    respuesta: `${coincidencias.slice(0, 2).join(' ')} ${complementariedadesYContradicciones.slice(0, 2).join(' ')}`.trim(),
+    articulosRespaldo: allCites,
+    suficiencia: extractions.length >= 2 ? 'parcial' : 'insuficiente',
+  };
+
+  // 4. Limitaciones y trabajo futuro
+  const limEntries = extractions.filter(
+    (e) =>
+      e.campos.limitaciones.valor !== 'No especificado en el artículo' ||
+      e.campos.recomendaciones.valor !== 'No especificado en el artículo'
+  );
+  const q4: AdditionalResearchQA = {
+    pregunta:
+      '¿Qué limitaciones reconocen los autores y qué recomendaciones o líneas de trabajo futuro proponen?',
+    respuesta:
+      limEntries.length > 0
+        ? limEntries
+            .map(
+              (e) =>
+                `${e.citaEnTextoApa7}: Limitaciones "${summarizeField(e.campos.limitaciones.valor, 120)}"; recomendaciones "${summarizeField(e.campos.recomendaciones.valor, 120)}".`
+            )
+            .join(' ')
+        : 'Los fragmentos analizados (frecuentemente limitados al resumen) no detallan explícitamente limitaciones ni recomendaciones futuras.',
+    articulosRespaldo: limEntries.length > 0 ? limEntries.map((e) => e.citaEnTextoApa7) : allCites,
+    suficiencia:
+      limEntries.length === extractions.length
+        ? 'suficiente'
+        : limEntries.length > 0
+          ? 'parcial'
+          : 'insuficiente',
+  };
+
+  return [q1, q2, q3, q4];
+}
+
+  const preguntasAdicionales = buildLocalAdditionalQuestions(
+    extractions,
+    coincidencias,
+    complementariedadesYContradicciones
+  );
+
   return {
     preguntaInvestigacion: researchQuestion,
     articulosIds: extractions.map((e) => e.articleId),
@@ -252,6 +360,7 @@ function buildLocalComparison(
     vaciosYLimitaciones,
     evidenciaParaPregunta,
     respuestaArgumentada,
+    preguntasAdicionales,
     afirmacionesRespaldadas,
     suficienciaEvidencia,
     notaSuficiencia,
@@ -292,6 +401,7 @@ Reglas obligatorias:
 3. Si existen desacuerdos o contradicciones entre artículos, muéstralos explícitamente en lugar de ocultarlos.
 4. No confundas correlación o coincidencia con causalidad, y no generalices más allá de la evidencia disponible.
 5. Si los artículos no permiten responder suficientemente la pregunta, indícalo claramente.
+6. ADEMÁS de responder la pregunta principal del usuario, genera entre 3 y 5 preguntas de investigación adicionales relevantes y específicas que surjan directamente de los documentos analizados (por ejemplo, sobre mecanismos, metodologías, factores moderadores, discrepancias o vacíos), y responde cada una rigurosamente con base en la evidencia encontrada y citas APA 7.
 Devuelve un JSON con esta estructura exacta:
 {
   "tablaComparativa": [
@@ -310,6 +420,14 @@ Devuelve un JSON con esta estructura exacta:
   "vaciosYLimitaciones": ["..."],
   "evidenciaParaPregunta": ["..."],
   "respuestaArgumentada": "texto académico en español con citas APA 7",
+  "preguntasAdicionales": [
+    {
+      "pregunta": "¿...?",
+      "respuesta": "Respuesta fundamentada exclusivamente en los documentos con citas APA 7...",
+      "articulosRespaldo": ["(Autor, Año)"],
+      "suficiencia": "suficiente" | "parcial" | "insuficiente"
+    }
+  ],
   "afirmacionesRespaldadas": [{ "afirmacion": "...", "articulosRespaldo": ["(Autor, Año)"], "tipo": "evidencia_directa" | "sintesis_comparativa" | "inferencia_cautelosa" }],
   "suficienciaEvidencia": "suficiente" | "parcial" | "insuficiente",
   "notaSuficiencia": "..."
@@ -353,6 +471,30 @@ ${JSON.stringify(compactArticles, null, 2)}`;
   const respuestaText = coerceLlmText(d?.respuestaArgumentada);
   const notaSufText = coerceLlmText(d?.notaSuficiencia);
 
+  const rawExtraQAs = Array.isArray(d?.preguntasAdicionales) ? d.preguntasAdicionales : [];
+  const parsedExtraQAs: AdditionalResearchQA[] = rawExtraQAs
+    .map((item: any): AdditionalResearchQA | null => {
+      const pregunta = coerceLlmText(item?.pregunta);
+      const respuesta = coerceLlmText(item?.respuesta);
+      if (!pregunta || !respuesta) return null;
+      const suf =
+        item?.suficiencia === 'suficiente' ||
+        item?.suficiencia === 'parcial' ||
+        item?.suficiencia === 'insuficiente'
+          ? item.suficiencia
+          : 'parcial';
+      const respaldos = Array.isArray(item?.articulosRespaldo)
+        ? item.articulosRespaldo.map((x: unknown) => coerceLlmText(x)).filter(Boolean)
+        : [];
+      return {
+        pregunta,
+        respuesta,
+        articulosRespaldo: respaldos.length > 0 ? respaldos : extractions.map((e) => e.citaEnTextoApa7),
+        suficiencia: suf,
+      };
+    })
+    .filter((x: AdditionalResearchQA | null): x is AdditionalResearchQA => x !== null);
+
   return {
     preguntaInvestigacion: researchQuestion,
     articulosIds: fallback.articulosIds,
@@ -368,6 +510,7 @@ ${JSON.stringify(compactArticles, null, 2)}`;
     vaciosYLimitaciones: safeArray(d?.vaciosYLimitaciones, fallback.vaciosYLimitaciones),
     evidenciaParaPregunta: safeArray(d?.evidenciaParaPregunta, fallback.evidenciaParaPregunta),
     respuestaArgumentada: respuestaText || fallback.respuestaArgumentada,
+    preguntasAdicionales: parsedExtraQAs.length > 0 ? parsedExtraQAs : fallback.preguntasAdicionales,
     afirmacionesRespaldadas: Array.isArray(d?.afirmacionesRespaldadas)
       ? d.afirmacionesRespaldadas
       : fallback.afirmacionesRespaldadas,

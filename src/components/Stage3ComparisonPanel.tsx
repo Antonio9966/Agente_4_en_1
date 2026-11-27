@@ -1,5 +1,5 @@
-import { AlertTriangle, ArrowRight, Loader2, Play, RefreshCw } from 'lucide-react';
-import type { Agent3ComparisonResult, ArticleExtraction } from '../types';
+import { AlertTriangle, ArrowRight, Loader2, Play, Plus, RefreshCw, Trash2 } from 'lucide-react';
+import type { AdditionalResearchQA, Agent3ComparisonResult, ArticleExtraction } from '../types';
 
 interface Stage3ComparisonPanelProps {
   extractions: ArticleExtraction[];
@@ -10,6 +10,9 @@ interface Stage3ComparisonPanelProps {
   onRunComparison: () => void;
   onUpdateTableCell: (rowIndex: number, articleId: string, value: string) => void;
   onUpdateAnswer: (answer: string) => void;
+  onUpdateAdditionalQA: (index: number, patch: Partial<AdditionalResearchQA>) => void;
+  onAddAdditionalQA: () => void;
+  onRemoveAdditionalQA: (index: number) => void;
   onProceedToAgent4: () => void;
   error: string | null;
 }
@@ -23,6 +26,9 @@ export function Stage3ComparisonPanel({
   onRunComparison,
   onUpdateTableCell,
   onUpdateAnswer,
+  onUpdateAdditionalQA,
+  onAddAdditionalQA,
+  onRemoveAdditionalQA,
   onProceedToAgent4,
   error,
 }: Stage3ComparisonPanelProps) {
@@ -196,6 +202,95 @@ export function Stage3ComparisonPanel({
               onChange={(e) => onUpdateAnswer(e.target.value)}
               className="mt-3 w-full rounded-xl border border-slate-300 p-3 text-sm leading-relaxed text-slate-900 focus:border-indigo-500 focus:outline-none"
             />
+          </section>
+
+          {/* Preguntas adicionales generadas y respondidas */}
+          <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-3">
+              <div>
+                <h3 className="text-base font-semibold text-slate-900">
+                  Preguntas de investigación adicionales generadas y respondidas
+                </h3>
+                <p className="text-xs text-slate-600">
+                  Formuladas y respondidas exclusivamente con la evidencia de los {extractions.length} documento(s) analizado(s). Puede editarlas o añadir nuevas.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={onAddAdditionalQA}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-1.5 text-xs font-semibold text-indigo-700 hover:bg-indigo-100"
+              >
+                <Plus className="h-3.5 w-3.5" />
+                <span>Añadir pregunta</span>
+              </button>
+            </div>
+
+            <div className="mt-4 space-y-4">
+              {(comparison.preguntasAdicionales ?? []).map((qa, idx) => (
+                <div key={idx} className="rounded-xl border border-slate-200 bg-slate-50/60 p-4 space-y-2.5">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="text-xs font-semibold text-indigo-700">
+                      Pregunta adicional {idx + 1}
+                    </span>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <select
+                        value={qa.suficiencia}
+                        onChange={(e) =>
+                          onUpdateAdditionalQA(idx, {
+                            suficiencia: e.target.value as AdditionalResearchQA['suficiencia'],
+                          })
+                        }
+                        className={`rounded-full border px-2.5 py-0.5 text-[11px] font-semibold ${
+                          qa.suficiencia === 'suficiente'
+                            ? 'border-emerald-200 bg-emerald-100 text-emerald-800'
+                            : qa.suficiencia === 'parcial'
+                              ? 'border-amber-200 bg-amber-100 text-amber-800'
+                              : 'border-rose-200 bg-rose-100 text-rose-800'
+                        }`}
+                      >
+                        <option value="suficiente">Evidencia suficiente</option>
+                        <option value="parcial">Evidencia parcial</option>
+                        <option value="insuficiente">Evidencia insuficiente</option>
+                      </select>
+                      <button
+                        type="button"
+                        onClick={() => onRemoveAdditionalQA(idx)}
+                        className="rounded-md p-1 text-slate-400 hover:bg-rose-50 hover:text-rose-600"
+                        title="Eliminar pregunta"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </div>
+                  </div>
+
+                  <input
+                    type="text"
+                    value={qa.pregunta}
+                    onChange={(e) => onUpdateAdditionalQA(idx, { pregunta: e.target.value })}
+                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-900 focus:border-indigo-500 focus:outline-none"
+                  />
+
+                  <textarea
+                    rows={4}
+                    value={qa.respuesta}
+                    onChange={(e) => onUpdateAdditionalQA(idx, { respuesta: e.target.value })}
+                    className="w-full rounded-lg border border-slate-300 bg-white p-2.5 text-xs leading-relaxed text-slate-800 focus:border-indigo-500 focus:outline-none"
+                  />
+
+                  <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-slate-600">
+                    <span className="font-semibold">Respaldo documental:</span>
+                    {qa.articulosRespaldo.map((cite, cIdx) => (
+                      <span
+                        key={cIdx}
+                        className="rounded-md border border-slate-200 bg-white px-2 py-0.5 text-slate-700"
+                      >
+                        {cite}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
           </section>
         </>
       )}

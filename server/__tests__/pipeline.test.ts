@@ -195,6 +195,8 @@ test('End-to-end Agent 2 -> Agent 3 -> Agent 4 -> DOCX/PDF/MD exports work relia
   );
   assert.equal(comp.columnas.length, 2);
   assert.ok(comp.tablaComparativa.length >= 7);
+  assert.ok(comp.preguntasAdicionales.length >= 3);
+  assert.ok(comp.preguntasAdicionales.every((qa) => qa.pregunta && qa.respuesta && qa.articulosRespaldo.length > 0));
 
   const doc = await composeFinalDocument({
     portada: {
@@ -213,6 +215,7 @@ test('End-to-end Agent 2 -> Agent 3 -> Agent 4 -> DOCX/PDF/MD exports work relia
 
   const md = exportToMarkdown(doc);
   assert.ok(md.includes('## 10. Referencias bibliográficas (APA 7)'));
+  assert.ok(md.includes('### Preguntas de investigación adicionales generadas y respondidas'));
 
   const docxBuf = await exportToDocx(doc);
   assert.equal(docxBuf.subarray(0, 2).toString('ascii'), 'PK');
