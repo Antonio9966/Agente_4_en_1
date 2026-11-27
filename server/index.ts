@@ -9,7 +9,7 @@ import { extractArticleInfo } from './services/agent2Extractor.js';
 import { runAgent3Comparison } from './services/agent3Comparator.js';
 import { composeFinalDocument } from './services/agent4Composer.js';
 import { exportToDocx, exportToMarkdown, exportToPdf } from './services/exporter.js';
-import { resolveLlmConfig } from './services/llmClient.js';
+import { listOpenAiCompatibleModels, resolveLlmConfig } from './services/llmClient.js';
 import { parsePdfBuffer, removeStoredPdf } from './services/pdfProcessor.js';
 import type {
   AcademicSource,
@@ -60,6 +60,28 @@ app.get('/api/health', (_req, res) => {
     },
     exportFormats: ['docx', 'pdf', 'md'],
   });
+});
+
+app.post('/api/llm/models', async (req, res) => {
+  try {
+    const { llmConfig } = req.body as { llmConfig?: LlmRuntimeConfig };
+    const cfg = resolveLlmConfig(llmConfig);
+    if (!cfg.available || !cfg.apiKey) {
+      res.status(400).json({ error: 'Ingrese una clave API válida para consultar los modelos disponibles.' });
+      return;
+    }
+    if (cfg.provider === 'gemini') {
+      res.json({
+        provider: cfg.label,
+        models: ['gemini-2.5-flash', 'gemini-2.5-pro', 'gemini-2.0-flash'],
+      });
+      return;
+    }
+    const models = await listOpenAiCompatibleModels(cfg.baseUrl || 'https://api.openai.com/v1', cfg.apiKey);
+    res.json({ provider: cfg.label, models });
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message || 'No se pudieron consultar los modelos.' });
+  }
 });
 
 app.post('/api/agent1/search', async (req, res) => {

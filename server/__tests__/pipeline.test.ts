@@ -7,7 +7,7 @@ import { runAgent3Comparison } from '../services/agent3Comparator.js';
 import { composeFinalDocument } from '../services/agent4Composer.js';
 import { formatInTextCitationApa7, formatReferenceApa7 } from '../services/apa7.js';
 import { exportToDocx, exportToMarkdown, exportToPdf } from '../services/exporter.js';
-import { resolveLlmConfig } from '../services/llmClient.js';
+import { pickPreferredChatModel, resolveLlmConfig } from '../services/llmClient.js';
 import { parsePdfBuffer, removeStoredPdf } from '../services/pdfProcessor.js';
 import type { ArticleSearchResult } from '../types.js';
 
@@ -99,13 +99,21 @@ test('resolveLlmConfig auto-detects Groq gsk_, Gemini AIza, and OpenRouter sk-or
   const groq = resolveLlmConfig({ provider: 'gemini', apiKey: 'gsk_example_key_123456' });
   assert.equal(groq.provider, 'openai');
   assert.equal(groq.baseUrl, 'https://api.groq.com/openai/v1');
-  assert.equal(groq.model, 'llama-3.3-70b-versatile');
+  assert.ok(groq.model && !groq.model.startsWith('gpt-') && !groq.model.startsWith('gemini-'));
 
   const gemini = resolveLlmConfig({ provider: 'openai', apiKey: 'AIzaExampleKey123456' });
   assert.equal(gemini.provider, 'gemini');
 
   const openrouter = resolveLlmConfig({ apiKey: 'sk-or-v1-example123' });
   assert.equal(openrouter.baseUrl, 'https://openrouter.ai/api/v1');
+});
+
+test('pickPreferredChatModel skips audio/guard models and picks active chat fallback', () => {
+  const picked = pickPreferredChatModel(
+    ['whisper-large-v3', 'meta-llama/llama-guard-4-12b', 'llama-3.1-8b-instant', 'qwen/qwen3-32b'],
+    'llama-3.3-70b-versatile'
+  );
+  assert.equal(picked, 'llama-3.1-8b-instant');
 });
 
 test('PDF processor extracts page-level text and flags unreadable/scanned PDFs', async () => {

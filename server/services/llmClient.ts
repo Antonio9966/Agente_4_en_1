@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import type { LlmRuntimeConfig } from '../types.js';
 
 export interface LlmResolvedConfig {
@@ -7,6 +8,82 @@ export interface LlmResolvedConfig {
   model?: string;
   baseUrl?: string;
   label: string;
+  modelExplicit?: boolean;
+}
+
+const discoveredModelCache = new Map<string, { model: string; allModels: string[]; expiresAt: number }>();
+
+const NON_CHAT_MODEL_RE =
+  /(whisper|tts|playai|guard|safeguard|embed|moderation|dall-e|sora|realtime|transcribe|orpheus|distil-whisper)/i;
+
+const MODEL_PRIORITY_PATTERNS: RegExp[] = [
+  /llama-3\.3/i,
+  /llama-3\.1-70b/i,
+  /llama-3\.1-8b/i,
+  /llama-4/i,
+  /qwen/i,
+  /gpt-oss/i,
+  /deepseek/i,
+  /mixtral/i,
+  /gemma/i,
+  /gpt-4o/i,
+  /gpt-4/i,
+];
+
+export function pickPreferredChatModel(modelIds: string[], excludeModel?: string): string | null {
+  const candidates = modelIds
+    .map((id) => id.trim())
+    .filter((id) => id && id !== excludeModel && !NON_CHAT_MODEL_RE.test(id));
+  if (candidates.length === 0) return null;
+
+  for (const pat of MODEL_PRIORITY_PATTERNS) {
+    const match = candidates.find((id) => pat.test(id));
+    if (match) return match;
+  }
+  return candidates[0];
+}
+
+export async function listOpenAiCompatibleModels(
+  baseUrl: string,
+  apiKey: string
+): Promise<string[]> {
+  const cacheKey = `${baseUrl}:${crypto.createHash('sha256').update(apiKey).digest('hex').slice(0, 12)}`;
+  const cached = discoveredModelCache.get(cacheKey);
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.allModels;
+  }
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 10000);
+  try {
+    const res = await fetch(`${baseUrl}/models`, {
+      signal: controller.signal,
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        Accept: 'application/json',
+      },
+    });
+    if (!res.ok) return [];
+    const body = (await res.json()) as { data?: Array<{ id?: string; active?: boolean }> };
+    const allModels = (body.data ?? [])
+      .filter((m) => m && typeof m.id === 'string' && m.active !== false)
+      .map((m) => String(m.id))
+      .filter((id) => !NON_CHAT_MODEL_RE.test(id));
+
+    const preferred = pickPreferredChatModel(allModels) || allModels[0] || '';
+    if (preferred) {
+      discoveredModelCache.set(cacheKey, {
+        model: preferred,
+        allModels,
+        expiresAt: Date.now() + 10 * 60 * 1000,
+      });
+    }
+    return allModels;
+  } catch {
+    return [];
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 function resolveOpenAiCompatible(
@@ -26,7 +103,13 @@ function resolveOpenAiCompatible(
       rawBase && rawBase !== 'https://api.openai.com/v1' ? rawBase : 'https://api.groq.com/openai/v1';
     const isIncompatibleModel =
       !rawModel || rawModel.startsWith('gpt-') || rawModel.startsWith('gemini-');
-    const model = isIncompatibleModel ? 'llama-3.3-70b-versatile' : rawModel;
+    const cacheKey = `${baseUrl}:${crypto.createHash('sha256').update(apiKey).digest('hex').slice(0, 12)}`;
+    const cached = discoveredModelCache.get(cacheKey);
+    const model = !isIncompatibleModel
+      ? rawModel
+      : cached && cached.expiresAt > Date.now()
+        ? cached.model
+        : 'llama-3.1-8b-instant';
     return {
       available: true,
       provider: 'openai',
@@ -34,6 +117,7 @@ function resolveOpenAiCompatible(
       model,
       baseUrl,
       label: `Groq (${model})`,
+      modelExplicit: !isIncompatibleModel,
     };
   }
 
@@ -48,6 +132,7 @@ function resolveOpenAiCompatible(
       model,
       baseUrl,
       label: `OpenRouter (${model})`,
+      modelExplicit: Boolean(rawModel),
     };
   }
 
@@ -60,6 +145,7 @@ function resolveOpenAiCompatible(
     model,
     baseUrl,
     label: `OpenAI-compatible (${model})`,
+    modelExplicit: Boolean(rawModel),
   };
 }
 
@@ -187,7 +273,14 @@ export async function callLlmJson<T>(
     }
 
     // OpenAI-compatible chat completions (OpenAI, Groq, OpenRouter)
-    const sendChat = async (useJsonFormat: boolean) =>
+    let activeModel = cfg.model || 'gpt-4o-mini';
+    if (!cfg.modelExplicit && cfg.baseUrl?.includes('groq.com')) {
+      const models = await listOpenAiCompatibleModels(cfg.baseUrl, cfg.apiKey);
+      const preferred = pickPreferredChatModel(models);
+      if (preferred) activeModel = preferred;
+    }
+
+    const sendChat = async (modelToUse: string, useJsonFormat: boolean) =>
       fetch(`${cfg.baseUrl}/chat/completions`, {
         method: 'POST',
         signal: controller.signal,
@@ -196,7 +289,7 @@ export async function callLlmJson<T>(
           Authorization: `Bearer ${cfg.apiKey}`,
         },
         body: JSON.stringify({
-          model: cfg.model,
+          model: modelToUse,
           temperature: 0.1,
           ...(useJsonFormat ? { response_format: { type: 'json_object' } } : {}),
           messages: [
@@ -206,24 +299,41 @@ export async function callLlmJson<T>(
         }),
       });
 
-    let res = await sendChat(true);
-    if (!res.ok && res.status === 400) {
-      const errPeek = await res.text().catch(() => '');
-      if (/response_format|json_object/i.test(errPeek)) {
-        res = await sendChat(false);
-      } else {
-        return {
-          ok: false,
-          error: `Error en ${cfg.label} (HTTP ${res.status}): ${errPeek.slice(0, 220)}`,
-        };
+    let res = await sendChat(activeModel, true);
+    let errText = !res.ok ? await res.text().catch(() => '') : '';
+
+    // Si el modelo no existe o no tiene acceso (404 / model_not_found), descubrir modelos disponibles en la cuenta y reintentar
+    if (!res.ok && (res.status === 404 || /model_not_found|does not exist/i.test(errText)) && cfg.baseUrl) {
+      const availableModels = await listOpenAiCompatibleModels(cfg.baseUrl, cfg.apiKey);
+      const fallbackModel = pickPreferredChatModel(availableModels, activeModel);
+      if (fallbackModel) {
+        activeModel = fallbackModel;
+        const cacheKey = `${cfg.baseUrl}:${crypto.createHash('sha256').update(cfg.apiKey).digest('hex').slice(0, 12)}`;
+        discoveredModelCache.set(cacheKey, {
+          model: fallbackModel,
+          allModels: availableModels,
+          expiresAt: Date.now() + 10 * 60 * 1000,
+        });
+        res = await sendChat(activeModel, true);
+        errText = !res.ok ? await res.text().catch(() => '') : '';
       }
     }
 
+    if (!res.ok && res.status === 400 && /response_format|json_object/i.test(errText)) {
+      res = await sendChat(activeModel, false);
+      errText = !res.ok ? await res.text().catch(() => '') : '';
+    }
+
+    const activeLabel = cfg.baseUrl?.includes('groq.com')
+      ? `Groq (${activeModel})`
+      : cfg.baseUrl?.includes('openrouter.ai')
+        ? `OpenRouter (${activeModel})`
+        : `OpenAI-compatible (${activeModel})`;
+
     if (!res.ok) {
-      const errBody = await res.text().catch(() => '');
       return {
         ok: false,
-        error: `Error en ${cfg.label} (HTTP ${res.status}): ${errBody.slice(0, 220)}`,
+        error: `Error en ${activeLabel} (HTTP ${res.status}): ${errText.slice(0, 220)}`,
       };
     }
 
@@ -233,7 +343,7 @@ export async function callLlmJson<T>(
       return { ok: false, error: 'El proveedor OpenAI-compatible no devolvió contenido.' };
     }
     const parsed = JSON.parse(extractJsonObject(text)) as T;
-    return { ok: true, data: parsed, providerLabel: cfg.label };
+    return { ok: true, data: parsed, providerLabel: activeLabel };
   } catch (err: any) {
     return {
       ok: false,

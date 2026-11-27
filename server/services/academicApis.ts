@@ -795,6 +795,10 @@ export async function runAgent1Search(
   const estadoFuentes = settled.map((s) => s.status);
 
   const deduplicated = mergeAndDeduplicate(allRaw);
+
+  // Verificar año original en Crossref por lotes de DOI para artículos de otras fuentes (ej. OpenAlex con fecha de depósito posterior)
+  await reconcileYearsWithCrossrefBatch(deduplicated, politeEmail);
+
   const filtered = applySearchFilters(deduplicated, filters);
 
   return {
@@ -804,4 +808,58 @@ export async function runAgent1Search(
     totalSinFiltrar: deduplicated.length,
     marcaTiempo: new Date().toISOString(),
   };
+}
+
+async function reconcileYearsWithCrossrefBatch(
+  articles: ArticleSearchResult[],
+  politeEmail?: string
+): Promise<void> {
+  const candidates = articles.filter(
+    (a) =>
+      a.doi !== 'No disponible' &&
+      a.fuenteInformacion !== 'Crossref' &&
+      !(a.fuentesSecundarias ?? []).includes('Crossref')
+  );
+  if (candidates.length === 0) return;
+
+  const dois = Array.from(new Set(candidates.map((a) => a.doi))).slice(0, 20);
+  const filterExpr = dois.map((d) => `doi:${d}`).join(',');
+  const params = new URLSearchParams({
+    filter: filterExpr,
+    rows: String(dois.length),
+    select: 'DOI,published-print,published-online,published,issued',
+  });
+  if (politeEmail) params.set('mailto', politeEmail);
+
+  try {
+    const res = await fetchJsonWithTimeout(`https://api.crossref.org/works?${params.toString()}`);
+    if (!res.ok) return;
+    const data = (await res.json()) as { message?: { items?: Array<Record<string, any>> } };
+    const items = data.message?.items ?? [];
+
+    const yearByDoi = new Map<string, number>();
+    for (const item of items) {
+      const doi = normalizeDoi(item.DOI).toLowerCase();
+      if (doi === 'no disponible') continue;
+      const earliest = pickEarliestValidYear([
+        item['published-print']?.['date-parts']?.[0]?.[0],
+        item.issued?.['date-parts']?.[0]?.[0],
+        item.published?.['date-parts']?.[0]?.[0],
+        item['published-online']?.['date-parts']?.[0]?.[0],
+      ]);
+      if (earliest !== null) {
+        yearByDoi.set(doi, earliest);
+      }
+    }
+
+    for (const art of candidates) {
+      const canonicalYear = yearByDoi.get(art.doi.toLowerCase());
+      if (canonicalYear !== undefined && (art.anio === null || canonicalYear < art.anio)) {
+        art.anio = canonicalYear;
+        art.anioTexto = String(canonicalYear);
+      }
+    }
+  } catch {
+    // Si Crossref no responde al enriquecimiento por lote, se conservan los metadatos originales
+  }
 }

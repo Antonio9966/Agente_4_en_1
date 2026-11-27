@@ -25,6 +25,17 @@ export async function fetchHealth(): Promise<HealthInfo> {
   return parseJsonOrThrow<HealthInfo>(res);
 }
 
+export async function fetchAvailableLlmModels(
+  llmConfig: LlmRuntimeConfig
+): Promise<{ provider: string; models: string[] }> {
+  const res = await fetch('/api/llm/models', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ llmConfig }),
+  });
+  return parseJsonOrThrow<{ provider: string; models: string[] }>(res);
+}
+
 export async function searchAgent1(
   query: string,
   sources: AcademicSource[],

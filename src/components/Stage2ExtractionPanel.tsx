@@ -3,6 +3,7 @@ import {
   AlertTriangle,
   ArrowRight,
   FileUp,
+  Info,
   Loader2,
   Play,
   RefreshCw,
@@ -201,15 +202,27 @@ export function Stage2ExtractionPanel({
 
             {ext.advertencias.length > 0 && (
               <div className="mt-3 space-y-1.5">
-                {ext.advertencias.map((adv, aIdx) => (
-                  <div
-                    key={aIdx}
-                    className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-2.5 text-xs text-amber-900"
-                  >
-                    <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                    <span>{adv}</span>
-                  </div>
-                ))}
+                {ext.advertencias.map((adv, aIdx) => {
+                  const isInfoNote =
+                    adv.includes('visor web') || adv.includes('estado de acceso');
+                  return (
+                    <div
+                      key={aIdx}
+                      className={`flex items-start gap-2 rounded-lg border p-2.5 text-xs ${
+                        isInfoNote
+                          ? 'border-sky-200 bg-sky-50 text-sky-900'
+                          : 'border-amber-200 bg-amber-50 text-amber-900'
+                      }`}
+                    >
+                      {isInfoNote ? (
+                        <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                      ) : (
+                        <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                      )}
+                      <span>{adv}</span>
+                    </div>
+                  );
+                })}
               </div>
             )}
 

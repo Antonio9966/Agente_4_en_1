@@ -1,4 +1,6 @@
-import { X } from 'lucide-react';
+import { useState } from 'react';
+import { Loader2, RefreshCw, X } from 'lucide-react';
+import { fetchAvailableLlmModels } from '../api';
 import type { HealthInfo, LlmRuntimeConfig } from '../types';
 
 interface SettingsModalProps {
@@ -10,7 +12,29 @@ interface SettingsModalProps {
 }
 
 export function SettingsModal({ open, onClose, llmConfig, onSaveLlmConfig, health }: SettingsModalProps) {
+  const [availableModels, setAvailableModels] = useState<string[]>([]);
+  const [loadingModels, setLoadingModels] = useState(false);
+  const [modelsError, setModelsError] = useState<string | null>(null);
+
   if (!open) return null;
+
+  const handleDetectModels = async () => {
+    setModelsError(null);
+    setLoadingModels(true);
+    try {
+      const res = await fetchAvailableLlmModels(llmConfig);
+      setAvailableModels(res.models);
+      if (res.models.length === 0) {
+        setModelsError('No se encontraron modelos de chat activos para esta clave.');
+      } else if (!llmConfig.model && res.models[0]) {
+        onSaveLlmConfig({ ...llmConfig, model: res.models[0] });
+      }
+    } catch (err: any) {
+      setModelsError(err?.message || 'No se pudieron consultar los modelos.');
+    } finally {
+      setLoadingModels(false);
+    }
+  };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4">
@@ -107,20 +131,46 @@ export function SettingsModal({ open, onClose, llmConfig, onSaveLlmConfig, healt
           </div>
 
           <div>
-            <label className="block text-xs font-medium text-slate-700">Modelo (opcional)</label>
+            <div className="flex items-center justify-between gap-2">
+              <label className="block text-xs font-medium text-slate-700">Modelo (opcional)</label>
+              <button
+                type="button"
+                disabled={loadingModels || (!llmConfig.apiKey?.trim() && !health?.llm.configured)}
+                onClick={handleDetectModels}
+                className="inline-flex items-center gap-1 text-[11px] font-semibold text-indigo-600 hover:underline disabled:opacity-40"
+              >
+                {loadingModels ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
+                <span>Detectar modelos disponibles</span>
+              </button>
+            </div>
             <input
               type="text"
               value={llmConfig.model || ''}
               onChange={(e) => onSaveLlmConfig({ ...llmConfig, model: e.target.value })}
               placeholder={
                 llmConfig.provider === 'groq'
-                  ? 'llama-3.3-70b-versatile'
+                  ? 'Detección automática según su cuenta Groq'
                   : llmConfig.provider === 'openai'
                     ? 'gpt-4o-mini'
                     : 'gemini-2.5-flash'
               }
               className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
             />
+            {availableModels.length > 0 && (
+              <select
+                value={llmConfig.model || ''}
+                onChange={(e) => onSaveLlmConfig({ ...llmConfig, model: e.target.value })}
+                className="mt-1.5 w-full rounded-lg border border-indigo-200 bg-indigo-50/40 px-2.5 py-1.5 text-xs text-slate-800"
+              >
+                <option value="">-- Elegir modelo detectado ({availableModels.length}) --</option>
+                {availableModels.map((m) => (
+                  <option key={m} value={m}>
+                    {m}
+                  </option>
+                ))}
+              </select>
+            )}
+            {modelsError && <p className="mt-1 text-xs text-rose-600">{modelsError}</p>}
           </div>
 
           {(llmConfig.provider === 'openai' || llmConfig.provider === 'groq') && (

@@ -174,27 +174,51 @@ export async function tryFetchOpenAccessPdf(
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 14000);
   try {
-    const res = await fetch(targetUrl, {
-      signal: controller.signal,
-      redirect: 'follow',
-      headers: {
-        'User-Agent': 'AgentesAnalisisCientifico/1.0 (open-access-reader)',
-        Accept: 'application/pdf,application/octet-stream;q=0.9,*/*;q=0.8',
-      },
-    });
-    if (!res.ok) return null;
-    const contentType = res.headers.get('content-type') || '';
-    const arrayBuffer = await res.arrayBuffer();
-    const buffer = Buffer.from(arrayBuffer);
-    // Verificar firma mágica %PDF aunque el content-type sea genérico
-    const isPdfMagic = buffer.subarray(0, 5).toString('ascii') === '%PDF-';
-    if (!isPdfMagic && !contentType.toLowerCase().includes('pdf')) {
-      return null;
+    const fetchPdfBinary = async (urlToFetch: string) => {
+      const res = await fetch(urlToFetch, {
+        signal: controller.signal,
+        redirect: 'follow',
+        headers: {
+          'User-Agent': 'AgentesAnalisisCientifico/1.0 (open-access-reader)',
+          Accept: 'application/pdf,application/octet-stream;q=0.9,text/html;q=0.5,*/*;q=0.3',
+        },
+      });
+      if (!res.ok) return null;
+      const contentType = (res.headers.get('content-type') || '').toLowerCase();
+      const arrayBuffer = await res.arrayBuffer();
+      const buffer = Buffer.from(arrayBuffer);
+      const isPdfMagic = buffer.subarray(0, 5).toString('ascii') === '%PDF-';
+      return { resUrl: res.url || urlToFetch, contentType, buffer, isPdfMagic };
+    };
+
+    const first = await fetchPdfBinary(targetUrl);
+    if (!first) return null;
+    if (first.isPdfMagic) {
+      return await parsePdfBuffer(first.buffer, fallbackName);
     }
-    if (!isPdfMagic) {
-      return null;
+
+    // Si es una página HTML abierta de un visor OJS/DSpace/SciELO, buscar meta citation_pdf_url o enlace directo al PDF
+    if (first.contentType.includes('html') && first.buffer.length < 600_000) {
+      const html = first.buffer.toString('utf8');
+      const metaMatch =
+        html.match(/<meta[^>]+name=["']citation_pdf_url["'][^>]+content=["']([^"']+)["']/i) ||
+        html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+name=["']citation_pdf_url["']/i);
+      const iframeMatch = html.match(/<(?:iframe|embed)[^>]+src=["']([^"']+\.pdf[^"']*)["']/i);
+      const ojsDownloadMatch = html.match(/href=["']([^"']*\/article\/download\/[^"']+)["']/i);
+
+      const resolvedCandidate = metaMatch?.[1] || iframeMatch?.[1] || ojsDownloadMatch?.[1];
+      if (resolvedCandidate) {
+        const nextUrl = new URL(resolvedCandidate, first.resUrl).href;
+        if (nextUrl !== first.resUrl) {
+          const second = await fetchPdfBinary(nextUrl);
+          if (second?.isPdfMagic) {
+            return await parsePdfBuffer(second.buffer, fallbackName);
+          }
+        }
+      }
     }
-    return await parsePdfBuffer(buffer, fallbackName);
+
+    return null;
   } catch {
     return null;
   } finally {
