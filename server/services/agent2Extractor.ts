@@ -9,6 +9,7 @@ import type {
   PdfPageContent,
 } from '../types.js';
 import { formatInTextCitationApa7, formatReferenceApa7 } from './apa7.js';
+import { coerceLlmText } from './agent4Composer.js';
 import { callLlmJson } from './llmClient.js';
 import { getStoredPdf, tryFetchEuropePmcFullTextXml, tryFetchOpenAccessPdf } from './pdfProcessor.js';
 
@@ -250,7 +251,7 @@ function normalizeLlmField(
   if (!raw || typeof raw !== 'object') {
     return createNotSpecifiedField(citation);
   }
-  const valor = typeof raw.valor === 'string' && raw.valor.trim() ? raw.valor.trim() : 'No especificado en el artículo';
+  const valor = coerceLlmText(raw.valor) || 'No especificado en el artículo';
   if (valor.toLowerCase().includes('no especificado en el artículo')) {
     return createNotSpecifiedField(citation);
   }
@@ -261,11 +262,8 @@ function normalizeLlmField(
     valor,
     tipo,
     referenciaArticulo: citation,
-    ubicacion:
-      typeof raw.ubicacion === 'string' && raw.ubicacion.trim()
-        ? raw.ubicacion.trim()
-        : 'Fuente no precisada en el texto',
-    fragmento: typeof raw.fragmento === 'string' ? raw.fragmento.trim() : '',
+    ubicacion: coerceLlmText(raw.ubicacion) || 'Fuente no precisada en el texto',
+    fragmento: coerceLlmText(raw.fragmento),
   };
 }
 

@@ -22,6 +22,28 @@ export interface ComposeInput {
   llmConfig?: LlmRuntimeConfig;
 }
 
+export function coerceLlmText(val: unknown): string {
+  if (val === null || val === undefined) return '';
+  if (typeof val === 'string') return val.trim();
+  if (typeof val === 'number' || typeof val === 'boolean') return String(val);
+  if (Array.isArray(val)) {
+    return val
+      .map((item) => coerceLlmText(item))
+      .filter(Boolean)
+      .join('\n');
+  }
+  if (typeof val === 'object') {
+    return Object.entries(val as Record<string, unknown>)
+      .map(([k, v]) => {
+        const inner = coerceLlmText(v);
+        return inner ? `${k}: ${inner}` : '';
+      })
+      .filter(Boolean)
+      .join('\n');
+  }
+  return '';
+}
+
 function formatFiltersText(filtros?: SearchFilters): string {
   if (!filtros) return 'Sin filtros adicionales aplicados.';
   const parts: string[] = [];
@@ -121,12 +143,16 @@ ${extracciones
   )
   .join('\n')}`;
 
-    const llmRes = await callLlmJson<Record<string, string>>(systemPrompt, userPrompt, llmConfig);
-    if (llmRes.ok) {
-      if (llmRes.data.resumenEjecutivo?.trim()) resumenEjecutivo = llmRes.data.resumenEjecutivo.trim();
-      if (llmRes.data.hallazgosArticulos?.trim()) hallazgosArticulos = llmRes.data.hallazgosArticulos.trim();
-      if (llmRes.data.sintesisComparativa?.trim()) sintesisComparativa = llmRes.data.sintesisComparativa.trim();
-      if (llmRes.data.inferenciasAnaliticas?.trim()) inferenciasAnaliticas = llmRes.data.inferenciasAnaliticas.trim();
+    const llmRes = await callLlmJson<Record<string, unknown>>(systemPrompt, userPrompt, llmConfig);
+    if (llmRes.ok && llmRes.data && typeof llmRes.data === 'object') {
+      const r = coerceLlmText(llmRes.data.resumenEjecutivo);
+      const h = coerceLlmText(llmRes.data.hallazgosArticulos);
+      const s = coerceLlmText(llmRes.data.sintesisComparativa);
+      const i = coerceLlmText(llmRes.data.inferenciasAnaliticas);
+      if (r) resumenEjecutivo = r;
+      if (h) hallazgosArticulos = h;
+      if (s) sintesisComparativa = s;
+      if (i) inferenciasAnaliticas = i;
     }
   }
 

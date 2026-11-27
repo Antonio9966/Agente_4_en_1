@@ -4,7 +4,7 @@ import PDFDocument from 'pdfkit';
 import { applySearchFilters, pickEarliestValidYear } from '../services/academicApis.js';
 import { extractArticleInfo } from '../services/agent2Extractor.js';
 import { runAgent3Comparison } from '../services/agent3Comparator.js';
-import { composeFinalDocument } from '../services/agent4Composer.js';
+import { composeFinalDocument, coerceLlmText } from '../services/agent4Composer.js';
 import { formatInTextCitationApa7, formatReferenceApa7 } from '../services/apa7.js';
 import { exportToDocx, exportToMarkdown, exportToPdf } from '../services/exporter.js';
 import { pickPreferredChatModel, resolveLlmConfig } from '../services/llmClient.js';
@@ -114,6 +114,13 @@ test('pickPreferredChatModel skips audio/guard models and picks active chat fall
     'llama-3.3-70b-versatile'
   );
   assert.equal(picked, 'llama-3.1-8b-instant');
+});
+
+test('coerceLlmText safely normalizes strings, arrays, and nested objects from LLM JSON', () => {
+  assert.equal(coerceLlmText(['Punto 1', 'Punto 2']), 'Punto 1\nPunto 2');
+  assert.equal(coerceLlmText({ '(Alicia, 2024)': 'Hallazgo A' }), '(Alicia, 2024): Hallazgo A');
+  assert.equal(coerceLlmText('  Texto  '), 'Texto');
+  assert.equal(coerceLlmText(null), '');
 });
 
 test('PDF processor extracts page-level text and flags unreadable/scanned PDFs', async () => {

@@ -5,6 +5,7 @@ import type {
   ComparisonRow,
   LlmRuntimeConfig,
 } from '../types.js';
+import { coerceLlmText } from './agent4Composer.js';
 import { callLlmJson } from './llmClient.js';
 
 function shortLabel(ext: ArticleExtraction, index: number): string {
@@ -327,18 +328,30 @@ ${JSON.stringify(compactArticles, null, 2)}`;
 
   const d = llmRes.data;
   const safeArray = (val: unknown, fb: string[]): string[] =>
-    Array.isArray(val) && val.length > 0 ? val.map(String) : fb;
+    Array.isArray(val) && val.length > 0
+      ? val.map((item) => coerceLlmText(item)).filter(Boolean)
+      : fb;
 
   const validTable =
     Array.isArray(d?.tablaComparativa) && d.tablaComparativa.length >= 7
-      ? d.tablaComparativa.map((row: any) => ({
-          criterio: String(row.criterio || 'Criterio'),
-          valoresPorArticulo:
-            row.valoresPorArticulo && typeof row.valoresPorArticulo === 'object'
-              ? row.valoresPorArticulo
-              : {},
-        }))
+      ? d.tablaComparativa.map((row: any) => {
+          const rawMap =
+            row?.valoresPorArticulo && typeof row.valoresPorArticulo === 'object'
+              ? (row.valoresPorArticulo as Record<string, unknown>)
+              : {};
+          const cleanMap: Record<string, string> = {};
+          for (const [k, v] of Object.entries(rawMap)) {
+            cleanMap[k] = coerceLlmText(v) || 'No especificado en el artículo';
+          }
+          return {
+            criterio: coerceLlmText(row?.criterio) || 'Criterio',
+            valoresPorArticulo: cleanMap,
+          };
+        })
       : fallback.tablaComparativa;
+
+  const respuestaText = coerceLlmText(d?.respuestaArgumentada);
+  const notaSufText = coerceLlmText(d?.notaSuficiencia);
 
   return {
     preguntaInvestigacion: researchQuestion,
@@ -354,10 +367,7 @@ ${JSON.stringify(compactArticles, null, 2)}`;
     ),
     vaciosYLimitaciones: safeArray(d?.vaciosYLimitaciones, fallback.vaciosYLimitaciones),
     evidenciaParaPregunta: safeArray(d?.evidenciaParaPregunta, fallback.evidenciaParaPregunta),
-    respuestaArgumentada:
-      typeof d?.respuestaArgumentada === 'string' && d.respuestaArgumentada.trim()
-        ? d.respuestaArgumentada.trim()
-        : fallback.respuestaArgumentada,
+    respuestaArgumentada: respuestaText || fallback.respuestaArgumentada,
     afirmacionesRespaldadas: Array.isArray(d?.afirmacionesRespaldadas)
       ? d.afirmacionesRespaldadas
       : fallback.afirmacionesRespaldadas,
@@ -367,10 +377,7 @@ ${JSON.stringify(compactArticles, null, 2)}`;
       d?.suficienciaEvidencia === 'insuficiente'
         ? d.suficienciaEvidencia
         : fallback.suficienciaEvidencia,
-    notaSuficiencia:
-      typeof d?.notaSuficiencia === 'string' && d.notaSuficiencia.trim()
-        ? d.notaSuficiencia.trim()
-        : fallback.notaSuficiencia,
+    notaSuficiencia: notaSufText || fallback.notaSuficiencia,
     modoAnalisis: 'llm',
     proveedorLlm: llmRes.providerLabel,
   };
